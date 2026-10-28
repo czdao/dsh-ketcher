@@ -1,0 +1,17 @@
+# dsh-ketcher bundle layer: one row mounting the Ketcher chemistry editor.
+#
+# The Host half (index.js) serves Ketcher's prebuilt static assets and a small
+# chemistry REST surface; the Client half (client.js) renders the drawing panel
+# above the message composer.
+#
+# Override any key from the profile's cordis.patch.yml (a patch replaces the
+# whole `config`, so restate every key you keep):
+#
+#   - id: ketcher
+#     config:
+#       mountPath: /ketcher-assets
+- insert:
+    - id: ketcher
+      name: '@local/dsh-ketcher'
+      config:
+        mountPath: /ketcher-assets
