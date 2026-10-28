@@ -1,0 +1,6 @@
+# Build products and dependencies are not committed.
+node_modules/
+vendor/ketcher-app.js
+vendor/ketcher-app.js.wrapped.js
+vendor/static/
+package-lock.json
