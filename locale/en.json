@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Ketcher Chemistry Editor",
+    "description": "Expands a Ketcher molecule drawing panel above the message composer; draw or edit a structure and insert its SMILES or molfile into the input, and gives the agent SMILES/molfile conversion tools."
+  }
+}
