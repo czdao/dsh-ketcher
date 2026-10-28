@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Ketcher 化学编辑器",
+    "description": "在消息输入框上方展开 Ketcher 分子结构绘制面板，可绘制/编辑结构并把 SMILES 或 molfile 插入输入框；同时为 Agent 提供 SMILES 与 molfile 互转工具。"
+  }
+}
