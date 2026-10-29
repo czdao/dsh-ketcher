@@ -5,13 +5,14 @@
   "license": "MIT",
   "type": "module",
   "keywords": ["dsh", "dsh-plugin", "deepseek-harness", "ketcher", "chemistry", "smiles", "molecule", "editor"],
-  "description": "Ketcher 化学分子式编辑器：在 DSH Web UI 的输入框上方提供可展开的分子结构绘制面板，并让 Agent 能读写 SMILES/molfile。",
+  "description": "Ketcher 化学分子式编辑器：在 DSH 右侧边栏里绘制/编辑分子结构并复制 SMILES/molfile，并让 Agent 能校验 SMILES、估算分子式。",
   "main": "./index.js",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
-    "./icon": "./icon.svg"
+    "./icon": "./icon.svg",
+    "./market/*": "./market/*"
   },
   "files": [
     "index.js",
@@ -19,6 +20,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
+    "market/*.json",
+    "market/icon.svg",
     "vendor/**"
   ],
   "dsh": {
