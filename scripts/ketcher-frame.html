@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ketcher</title>
+<!-- Relative URLs: this document is served under the plugin mount path, e.g.
+     /ketcher-assets/ketcher-frame.html, so "ketcher-app.js" resolves beside it. -->
+<link rel="stylesheet" href="ketcher-app.css">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  #root { position: absolute; inset: 0; }
+  #boot { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          font: 13px/1.5 system-ui, sans-serif; color: #888; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="boot">初始化 Ketcher…</div>
+<script>
+(function () {
+  var ketcher = null;
+  function post(msg) { try { parent.postMessage(msg, '*'); } catch (e) {} }
+  function ready() { post({ __dshKetcher: true, type: 'ready' }); }
+  function fail(error) { post({ __dshKetcher: true, type: 'error', error: String(error && (error.message || error)) }); }
+
+  window.addEventListener('error', function (e) { fail(e.error || e.message); });
+  window.addEventListener('unhandledrejection', function (e) { fail(e.reason); });
+
+  function mount() {
+    var root = document.getElementById('root');
+    try {
+      window.Ketcher.mount(root, {
+        staticResourcesUrl: 'static',
+        onInit: function (k) {
+          ketcher = k;
+          var b = document.getElementById('boot');
+          if (b) b.style.display = 'none';
+          ready();
+        },
+      });
+    } catch (e) { fail(e); }
+  }
+
+  var s = document.createElement('script');
+  s.src = 'ketcher-app.js';
+  s.onload = mount;
+  s.onerror = function () { fail('无法加载 ketcher-app.js（请先运行 build-vendor）'); };
+  document.head.appendChild(s);
+
+  // Command protocol with the host page.
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || d.__dshKetcherCmd !== true) return;
+    var id = d.id, kind = d.kind;
+    function reply(ok, value, error) {
+      post({ __dshKetcher: true, type: 'result', id: id, ok: ok, value: value, error: error });
+    }
+    if (!ketcher) { reply(false, null, '编辑器尚未就绪'); return; }
+    try {
+      if (kind === 'smiles') {
+        Promise.resolve(ketcher.getSmiles()).then(function (v) { reply(true, v); }, function (e) { reply(false, null, String(e && e.message || e)); });
+      } else if (kind === 'molfile') {
+        Promise.resolve(ketcher.getMolfile()).then(function (v) { reply(true, v); }, function (e) { reply(false, null, String(e && e.message || e)); });
+      } else if (kind === 'set') {
+        Promise.resolve(ketcher.setMolecule(d.value || '')).then(function () { reply(true, ''); }, function (e) { reply(false, null, String(e && e.message || e)); });
+      } else if (kind === 'clear') {
+        Promise.resolve(ketcher.setMolecule('')).then(function () { reply(true, ''); }, function (e) { reply(false, null, String(e && e.message || e)); });
+      } else {
+        reply(false, null, '未知命令: ' + kind);
+      }
+    } catch (e) { reply(false, null, String(e && e.message || e)); }
+  });
+})();
+</script>
+</body>
+</html>
