@@ -2,5 +2,7 @@
 node_modules/
 vendor/ketcher-app.js
 vendor/ketcher-app.js.wrapped.js
+vendor/ketcher-app.css
+vendor/ketcher-frame.html
 vendor/static/
 package-lock.json
