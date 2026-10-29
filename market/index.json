@@ -1,0 +1,75 @@
+{
+  "format": 1,
+  "title": {
+    "en": "DSH Chemistry Plugins",
+    "zh": "DSH 化学插件市场"
+  },
+  "description": {
+    "en": "Plugins for chemistry inside DeepSeek Harness.",
+    "zh": "在 DeepSeek Harness 内的化学相关插件。"
+  },
+  "metadata": {
+    "categories": {
+      "chemistry": {
+        "title": {
+          "en": "Chemistry",
+          "zh": "化学"
+        }
+      }
+    },
+    "labels": {
+      "ketcher": {
+        "title": {
+          "en": "Ketcher",
+          "zh": "Ketcher"
+        }
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "@local/dsh-ketcher",
+      "title": {
+        "en": "Ketcher Chemistry Editor",
+        "zh": "Ketcher 化学编辑器"
+      },
+      "description": {
+        "en": "A Ketcher molecule editor in the right sidebar: draw/edit a structure, copy SMILES or molfile. Also gives the agent a SMILES analysis tool.",
+        "zh": "右侧边栏里的 Ketcher 分子编辑器：绘制/编辑结构，复制 SMILES 或 molfile；并给 Agent 提供 SMILES 分析工具。"
+      },
+      "icon": "https://raw.githubusercontent.com/czdao/dsh-ketcher/main/icon.svg",
+      "author": "czdao",
+      "homepage": "https://github.com/czdao/dsh-ketcher",
+      "repository": {
+        "url": "https://github.com/czdao/dsh-ketcher"
+      },
+      "metadata": {
+        "category": "chemistry",
+        "keywords": [
+          "ketcher",
+          "chemistry",
+          "smiles",
+          "molecule",
+          "editor"
+        ],
+        "labels": [
+          "ketcher"
+        ]
+      },
+      "versions": [
+        {
+          "version": "1.0.0",
+          "publishTimestamp": 1793251205,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/czdao/dsh-ketcher",
+            "commit": "4f058c37f294fc4ffccc634d7126249b8d5bc7bc"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        }
+      ]
+    }
+  ]
+}
