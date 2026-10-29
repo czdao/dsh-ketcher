@@ -199,7 +199,12 @@ async function serveVendor(request, response, mountPath, vendorRoot) {
   try {
     const body = await readFile(target);
     const type = MIME[extname(target).toLowerCase()] ?? 'application/octet-stream';
-    response.writeHead(200, { 'content-type': type, 'cache-control': 'public, max-age=3600' });
+    // The main runtime JS may be rebuilt/replaced; never let browsers cache a
+    // stale (possibly broken) build. Immutable sub-assets (fonts, wasm images)
+    // can still be cached briefly.
+    const isMain = /\/(ketcher-app\.js|ketcher-app\.css)$/.test(target.replace(/\\/g, '/'));
+    const cacheControl = isMain ? 'no-cache, must-revalidate' : 'public, max-age=3600';
+    response.writeHead(200, { 'content-type': type, 'cache-control': cacheControl });
     if (request.method === 'HEAD') response.end();
     else response.end(body);
   } catch {
