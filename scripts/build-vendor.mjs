@@ -20,7 +20,7 @@
  */
 import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgDir = resolve(here, '..');
@@ -85,29 +85,61 @@ export { mount };
 writeFileSync(entryFile, entrySource, 'utf8');
 
 // 3) Bundle with esbuild into a single IIFE exposing window.Ketcher = { mount }.
-const esbuild = await import(join(pkgDir, 'node_modules/esbuild/lib/main.js'));
+const esbuild = await import(pathToFileURL(join(pkgDir, 'node_modules/esbuild/lib/main.js')).href);
 const esbuildFn = esbuild.build || esbuild.default?.build;
 if (typeof esbuildFn !== 'function') fail('esbuild API not found');
 
 mkdirSync(vendorDir, { recursive: true });
+const rawOut = join(vendorDir, 'ketcher-app.raw.js');
+// ketcher-core imports a few Node builtins (events, stream, buffer, util). Map
+// them to tiny browser shims so the bundle runs in the page.
+const polyfillDir = join(here, 'polyfills');
 await esbuildFn({
   entryPoints: [entryFile],
   bundle: true,
   format: 'iife',
   globalName: 'KetcherLib',
-  outfile: outFile,
+  outfile: rawOut,
   platform: 'browser',
   target: ['es2020'],
   loader: { '.woff': 'file', '.woff2': 'file', '.ttf': 'file', '.svg': 'file', '.png': 'file' },
-  define: { 'process.env.NODE_ENV': '"production"' },
+  define: { 'process.env.NODE_ENV': '"production"', global: 'globalThis' },
+  alias: {
+    events: join(polyfillDir, 'events.js'),
+    stream: join(polyfillDir, 'stream.js'),
+    buffer: join(polyfillDir, 'buffer.js'),
+    util: join(polyfillDir, 'util.js'),
+  },
+  inject: [join(polyfillDir, 'process-shim.js')],
   minify: true,
   sourcemap: false,
   logLevel: 'info',
 });
 
-// Wrap so the global surface is exactly { mount }.
-const bundled = (await import('node:fs')).readFileSync(outFile, 'utf8');
-writeFileSync(outFile + '.wrapped.js', `(function(){${bundled}\nwindow.Ketcher = { mount: KetcherLib.mount };})();`, 'utf8');
+// Wrap so the global surface is exactly { mount } and this IS ketcher-app.js.
+import { readFileSync as rf, unlinkSync } from 'node:fs';
+const bundled = rf(rawOut, 'utf8');
+writeFileSync(outFile, `(function(){${bundled}\nwindow.Ketcher = { mount: KetcherLib.mount };})();`, 'utf8');
+try { unlinkSync(rawOut); } catch { /* keep */ }
+
+// esbuild extracts CSS imported by JS into a sibling "<outfile>.css". Move it to
+// a stable name the Client <link>s.
+const rawCss = join(vendorDir, 'ketcher-app.raw.css');
+const cssOut = join(vendorDir, 'ketcher-app.css');
+if (existsSync(rawCss)) {
+  writeFileSync(cssOut, rf(rawCss, 'utf8'), 'utf8');
+  try { unlinkSync(rawCss); } catch { /* keep */ }
+  console.log('[dsh-ketcher] wrote ketcher-app.css');
+}
+
+// Copy the self-contained host frame page (loads this bundle, exposes a
+// postMessage protocol for the sidebar tab body).
+const frameSrc = join(here, 'ketcher-frame.html');
+const frameOut = join(vendorDir, 'ketcher-frame.html');
+if (existsSync(frameSrc)) {
+  writeFileSync(frameOut, rf(frameSrc, 'utf8'), 'utf8');
+  console.log('[dsh-ketcher] wrote ketcher-frame.html');
+}
 
 // 4) Copy Ketcher's runtime static resources (WASM, fonts, templates, etc.).
 function copyDir(src, dst) {
