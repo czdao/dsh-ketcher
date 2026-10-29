@@ -125,3 +125,25 @@ SMILES↔molfile 转换（后者由浏览器内 Ketcher 的 Indigo 完成，画�
 
 已知限制：模板缩略图面板（templates）依赖 `staticResourcesUrl` 下的模板资源，未随包提供，
 不影响绘制与 SMILES/molfile 转换；核心 Indigo 化学引擎已随 worker 内联，离线可用。
+
+---
+
+## 六、DSH 插件市场（插件平台）
+
+DSH **没有中心化的官方插件市场**——内置的「插件市场 / Discover」是一个**用户自选索引源**的功能：
+它读取你添加的 **index URL**（插件市场索引 `format 1` 的 JSON 文件）并列出其中的插件。
+
+本插件**自带并发**一个合法的市场索引：
+- Host 路由：`GET /ketcher-market/index.json`（`format 1`，含本插件条目与内嵌图标）
+- 图标：`GET /ketcher-market/icon.svg`
+- 索引源 URL：`http://127.0.0.1:13619/ketcher-market/index.json`
+
+在 DSH 里查看：
+1. 侧边栏 **Plugins**（插件页）
+2. 打开 **Discover** 标签（来自 `@deepseek-ai/dsh-client-ui-plugin-market`，已启用）
+3. 索引源已配置为上面的 URL，「DSH 化学插件市场 → Ketcher 化学编辑器」会列出
+
+> 说明：市场里的“一键安装”对 git 源执行 `git+https://github.com/czdao/dsh-ketcher.git#<commit>`，
+> 需要能访问 github.com 且安装后需再跑 `build-vendor` 生成 30MB 运行时；本机经本地 link 安装已可用，
+> 无需依赖市场安装。市场条目主要用于**展示与分发**。
+
