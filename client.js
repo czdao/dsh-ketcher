@@ -1,20 +1,19 @@
 /**
  * dsh-ketcher — Client half.
  *
- * Registers one entry in `conversation.composer.dock`: a compact button that
- * expands an inline Ketcher drawing panel above the message composer. When the
- * user finishes drawing, they insert the structure's SMILES or molfile into the
- * composer through the standard `inputActions` slot props. Nothing here reads
- * another plugin's DOM or replaces the app root.
+ * Registers Ketcher as a **right-sidebar tab type**. The tab body renders a
+ * same-origin <iframe> served by this plugin's Host half
+ * (`/ketcher-assets/ketcher-frame.html`). Ketcher runs inside that frame's own
+ * document, so it never depends on the host page's React, module table, or CSP —
+ * the chemistry engine (Indigo WASM in a blob Worker) initializes in a clean
+ * page context. The host page talks to the frame over postMessage to read
+ * SMILES/molfile and copy them to the clipboard.
  *
- * The heavy Ketcher runtime (`vendor/ketcher-app.js`, a standalone build that
- * exposes `window.Ketcher`) is loaded lazily the first time the panel opens and
- * served by the Host half at `mountPath`. If it has not been built, the panel
- * shows a short hint instead of failing.
- *
- * Module format: the browser module loader calls this factory with `require`,
- * which resolves `react` from the host module table. Do not require any Harness
- * Client package here.
+ * Registration follows the public sidebar-right path (as `ui-sidebar-files`):
+ *   - type:  ctx.sidebarRightTabs.register({ id, kind, priority, title, guide })
+ *   - body:  ctx.slots.inject('sidebar.right.pane.tab', () =>
+ *              ctx.slots.register({ name, key: id, locale }, Body))
+ *   - open:  ctx.sidebarRight.openTab('ketcher')
  */
 window.__ModuleLoader__.load({
   id: '@local/dsh-ketcher',
@@ -22,259 +21,184 @@ window.__ModuleLoader__.load({
     const React = require('react');
     const h = React.createElement;
 
-    // The panel is loaded lazily; keep per-page loaders cached so re-opening
-    // does not re-inject the script.
-    let ketcherScriptPromise = null;
+    const NS = 'dshKetcher';
+    const TAB_ID = '@local/dsh-ketcher';
+    const TAB_KIND = 'ketcher';
 
-    /** Where the Host serves the prebuilt Ketcher runtime. */
+    const DICT = {
+      zh: {
+        'type.label': 'Ketcher 化学编辑器',
+        'guide.title': 'Ketcher 化学编辑器',
+        'guide.description': '绘制 / 编辑分子结构，复制 SMILES 或 molfile',
+        'panel.title': 'Ketcher 分子编辑器',
+        'btn.copySmiles': '复制 SMILES',
+        'btn.copyMolfile': '复制 molfile',
+        'btn.clear': '清空',
+        'status.loading': '正在加载 Ketcher…',
+        'status.unavailable': 'Ketcher 资源未就绪：',
+        'status.hint': '（运行插件目录下的 node scripts/build-vendor.mjs 生成 vendor/ketcher-app.js）',
+        'err.timeout': '等待编辑器响应超时。',
+        'err.copyFailed': '复制失败：',
+        'copied': '已复制到剪贴板',
+      },
+      en: {
+        'type.label': 'Ketcher Chemistry Editor',
+        'guide.title': 'Ketcher Chemistry Editor',
+        'guide.description': 'Draw / edit a molecule, copy SMILES or molfile',
+        'panel.title': 'Ketcher Molecule Editor',
+        'btn.copySmiles': 'Copy SMILES',
+        'btn.copyMolfile': 'Copy molfile',
+        'btn.clear': 'Clear',
+        'status.loading': 'Loading Ketcher…',
+        'status.unavailable': 'Ketcher assets are not ready: ',
+        'status.hint': ' (run `node scripts/build-vendor.mjs` in the plugin directory to build vendor/ketcher-app.js)',
+        'err.timeout': 'Timed out waiting for the editor.',
+        'err.copyFailed': 'Copy failed: ',
+        'copied': 'Copied to clipboard',
+      },
+    };
+
     const ASSET_BASE = '/ketcher-assets';
-    const KETCHER_SCRIPT_URL = ASSET_BASE + '/ketcher-app.js';
+    const ASSET_VER = 'v4';
+    const FRAME_URL = ASSET_BASE + '/ketcher-frame.html?v=' + ASSET_VER;
 
-    /** Inject (once) the Ketcher standalone script and resolve when ready. */
-    function loadKetcherScript() {
-      if (window.Ketcher) return Promise.resolve(window.Ketcher);
-      if (ketcherScriptPromise) return ketcherScriptPromise;
-      ketcherScriptPromise = new Promise((resolve, reject) => {
-        const existing = document.querySelector('script[data-dsh-ketcher="1"]');
-        if (existing) {
-          existing.addEventListener('load', () => resolve(window.Ketcher));
-          existing.addEventListener('error', () => reject(new Error('ketcher script failed')));
-          return;
-        }
-        const tag = document.createElement('script');
-        tag.src = KETCHER_SCRIPT_URL;
-        tag.async = true;
-        tag.dataset.dshKetcher = '1';
-        tag.addEventListener('load', () => {
-          if (window.Ketcher) resolve(window.Ketcher);
-          else reject(new Error('ketcher global missing after load'));
-        });
-        tag.addEventListener('error', () => reject(new Error('ketcher script 404 — run the vendor build')));
-        document.head.appendChild(tag);
-      });
-      return ketcherScriptPromise;
-    }
-
-    /** A tiny icon for the toolbar button. */
-    function MoleculeIcon() {
+    /** Glyph for the guide card. */
+    function KetcherGlyph() {
       return h('svg', {
-        viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': true,
+        viewBox: '0 0 24 24', width: 20, height: 20, 'aria-hidden': true,
         fill: 'none', stroke: 'currentColor', strokeWidth: 1.6,
         strokeLinecap: 'round', strokeLinejoin: 'round',
       }, [
         h('path', { key: 'hex', d: 'M12 2.5 20 7v10l-8 4.5L4 17V7z' }),
-        h('circle', { key: 'a', cx: 12, cy: 2.5, r: 1.6, fill: 'currentColor', stroke: 'none' }),
-        h('circle', { key: 'b', cx: 20, cy: 7, r: 1.6, fill: 'currentColor', stroke: 'none' }),
-        h('circle', { key: 'c', cx: 4, cy: 17, r: 1.6, fill: 'currentColor', stroke: 'none' }),
+        h('circle', { key: 'a', cx: 12, cy: 2.5, r: 1.7, fill: 'currentColor', stroke: 'none' }),
+        h('circle', { key: 'b', cx: 20, cy: 7, r: 1.7, fill: 'currentColor', stroke: 'none' }),
+        h('circle', { key: 'c', cx: 4, cy: 17, r: 1.7, fill: 'currentColor', stroke: 'none' }),
       ]);
     }
 
-    /**
-     * The Ketcher panel component. Mounts Ketcher into a div when opened, and
-     * cleans up the editor instance on close/unmount.
-     */
-    function KetcherPanel(props) {
-      const inputActions = props.inputActions;
-      const [open, setOpen] = React.useState(false);
-      const [status, setStatus] = React.useState('idle'); // idle | loading | ready | error
+    /** Tab body: hosts the Ketcher frame and drives it over postMessage. */
+    function KetcherTabBody(props) {
+      const t = props.t || ((k) => k);
+      const [status, setStatus] = React.useState('loading'); // loading | ready | error
       const [message, setMessage] = React.useState('');
-      const hostRef = React.useRef(null);
-      const ketcherRef = React.useRef(null);
-      const [editorKey, setEditorKey] = React.useState(0);
+      const frameRef = React.useRef(null);
+      const pending = React.useRef(new Map()); // id -> {resolve, reject, timer}
+      const seq = React.useRef(0);
 
-      // Mount / unmount the Ketcher editor when the panel opens or closes.
       React.useEffect(() => {
-        if (!open) return undefined;
-        let cancelled = false;
-        setStatus('loading');
-        setMessage('正在加载 Ketcher…');
-        const host = hostRef.current;
-        if (!host) return undefined;
-
-        loadKetcherScript()
-          .then((Ketcher) => {
-            if (cancelled || !hostRef.current) return;
-            const hostEl = hostRef.current;
-            hostEl.innerHTML = '';
-            // The vendored build exposes a small imperative bootstrap.
-            const onInit = (ketcher) => {
-              ketcherRef.current = ketcher;
-              if (cancelled) return;
-              setStatus('ready');
-              setMessage('');
-            };
-            if (typeof Ketcher.mount === 'function') {
-              Ketcher.mount(hostEl, {
-                staticResourcesUrl: ASSET_BASE,
-                onInit,
-              });
-            } else if (typeof Ketcher === 'function') {
-              // Fallback: constructor form Ketcher(container, { onInit }).
-              Ketcher(hostEl, { onInit, staticResourcesUrl: ASSET_BASE });
-            } else {
-              throw new Error('unsupported Ketcher build');
-            }
-          })
-          .catch((error) => {
-            if (cancelled) return;
-            setStatus('error');
-            setMessage(error instanceof Error ? error.message : String(error));
-          });
-
+        function settle(id, ok, value, error) {
+          const p = pending.current.get(id);
+          if (!p) return;
+          pending.current.delete(id);
+          clearTimeout(p.timer);
+          if (ok) p.resolve(value); else p.reject(new Error(error || 'error'));
+        }
+        function onMessage(ev) {
+          const f = frameRef.current;
+          if (f && ev.source !== f.contentWindow) return;
+          const d = ev.data;
+          if (!d || d.__dshKetcher !== true) return;
+          if (d.type === 'ready') { setStatus('ready'); setMessage(''); }
+          else if (d.type === 'error') { setStatus('error'); setMessage(String(d.error || '')); }
+          else if (d.type === 'result') { settle(d.id, d.ok === true, d.value, d.error); }
+        }
+        window.addEventListener('message', onMessage);
         return () => {
-          cancelled = true;
-          // Best-effort teardown of the editor instance.
-          const inst = ketcherRef.current;
-          ketcherRef.current = null;
-          if (inst && typeof inst.destroy === 'function') {
-            try { inst.destroy(); } catch { /* ignore */ }
-          }
-          if (hostRef.current) hostRef.current.innerHTML = '';
+          window.removeEventListener('message', onMessage);
+          for (const [, p] of pending.current) { clearTimeout(p.timer); try { p.reject(new Error('unmounted')); } catch (e) {} }
+          pending.current.clear();
         };
-      }, [open, editorKey]);
+      }, []);
 
-      const insertText = (text) => {
+      const command = (kind, value) => new Promise((resolve, reject) => {
+        const f = frameRef.current;
+        if (!f || !f.contentWindow) { reject(new Error(t('status.loading'))); return; }
+        if (status !== 'ready') { reject(new Error(t('err.timeout'))); return; }
+        const id = ++seq.current;
+        const timer = setTimeout(() => { pending.current.delete(id); reject(new Error(t('err.timeout'))); }, 15000);
+        pending.current.set(id, { resolve, reject, timer });
+        f.contentWindow.postMessage({ __dshKetcherCmd: true, id, kind, value }, '*');
+      });
+
+      const copyText = async (text) => {
         if (!text) return;
-        if (!inputActions || typeof inputActions.insertText !== 'function' ||
-            typeof inputActions.captureInsertion !== 'function') {
-          setMessage('当前输入框不支持插入。');
-          return;
-        }
-        const span = inputActions.captureInsertion();
-        const ok = inputActions.insertText(text, span);
-        if (!ok) setMessage('草稿已变化，请重试插入。');
-      };
-
-      const insertSmiles = async () => {
-        const inst = ketcherRef.current;
-        if (!inst) return;
         try {
-          const smiles = await inst.getSmiles();
-          insertText(smiles);
-        } catch (error) {
-          setMessage('获取 SMILES 失败：' + (error instanceof Error ? error.message : String(error)));
-        }
+          if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+          else {
+            const ta = document.createElement('textarea'); ta.value = text;
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+          }
+          setMessage(t('copied')); setTimeout(() => setMessage(''), 1500);
+        } catch (e) { setMessage(t('err.copyFailed') + (e && e.message ? e.message : String(e))); }
       };
+      const copySmiles = () => command('smiles').then(copyText).catch((e) => setMessage(t('err.copyFailed') + e.message));
+      const copyMolfile = () => command('molfile').then(copyText).catch((e) => setMessage(t('err.copyFailed') + e.message));
+      const clearStructure = () => command('clear').catch((e) => setMessage(e.message));
 
-      const insertMolfile = async () => {
-        const inst = ketcherRef.current;
-        if (!inst) return;
-        try {
-          const mol = await inst.getMolfile();
-          insertText(mol);
-        } catch (error) {
-          setMessage('获取 molfile 失败：' + (error instanceof Error ? error.message : String(error)));
-        }
-      };
-
-      const clearStructure = () => {
-        const inst = ketcherRef.current;
-        if (inst && typeof inst.setMolecule === 'function') {
-          try { inst.setMolecule(''); } catch { /* ignore */ }
-        }
-      };
-
-      const toggleOpen = () => {
-        setOpen((v) => {
-          const next = !v;
-          if (next) setEditorKey((k) => k + 1);
-          return next;
-        });
-      };
-
-      const btn = (label, onClick, opts = {}) => h('button', {
-        type: 'button',
-        onClick,
-        disabled: opts.disabled === true,
+      const btn = (label, onClick, primary) => h('button', {
+        type: 'button', onClick, disabled: status !== 'ready',
         style: {
           appearance: 'none', border: 'none', borderRadius: 'var(--dsw-radius-sm, 6px)',
-          padding: '6px 12px', fontSize: '13px', cursor: opts.disabled ? 'default' : 'pointer',
-          background: opts.primary ? 'var(--dsw-alias-state-business-primary, #247bbf)' : 'var(--dsw-alias-interactive-bg-hover, #f0f0f0)',
-          color: opts.primary ? '#fff' : 'var(--dsw-alias-label-primary, #222)',
-          opacity: opts.disabled ? 0.5 : 1,
+          padding: '5px 12px', fontSize: '13px', cursor: status !== 'ready' ? 'default' : 'pointer',
+          background: primary ? 'var(--dsw-alias-state-business-primary, #247bbf)' : 'var(--dsw-alias-interactive-bg-hover, #f0f0f0)',
+          color: primary ? '#fff' : 'var(--dsw-alias-label-primary, #222)', opacity: status !== 'ready' ? 0.5 : 1,
         },
       }, label);
 
-      const rootStyle = {
-        boxSizing: 'border-box',
-        width: '100%',
-        margin: '0 auto',
-        borderRadius: 'var(--dsw-radius-lg, 12px)',
-        background: 'var(--dsw-specific-menu, #fff)',
-        boxShadow: 'var(--dsw-elevation-panel, 0 4px 16px rgba(0,0,0,0.12))',
-        border: '1px solid var(--dsw-alias-border-l1, #e2e2e2)',
-        overflow: 'hidden',
-        color: 'var(--dsw-alias-label-primary, #222)',
-      };
-
-      const trigger = h('button', {
-        type: 'button',
-        onClick: toggleOpen,
-        title: 'Ketcher 化学结构编辑器',
-        'aria-expanded': open,
-        style: {
-          display: 'inline-flex', alignItems: 'center', gap: '6px',
-          appearance: 'none', background: 'transparent', border: 'none',
-          color: 'var(--dsw-alias-label-secondary, #555)', cursor: 'pointer',
-          fontSize: '13px', padding: '4px 8px', borderRadius: 'var(--dsw-radius-sm, 6px)',
-        },
-      }, [h(MoleculeIcon, { key: 'i' }), h('span', { key: 't' }, '结构式')]);
-
-      if (!open) {
-        return h('div', { style: { width: '100%', display: 'flex', justifyContent: 'flex-start' } }, trigger);
-      }
-
-      return h('div', { style: rootStyle }, [
-        h('div', {
-          key: 'head',
-          style: {
-            display: 'flex', alignItems: 'center', gap: '10px',
-            padding: '8px 12px', borderBottom: '1px solid var(--dsw-alias-border-l1, #eee)',
-          },
-        }, [
-          h('span', { key: 'title', style: { fontSize: '13px', fontWeight: 600 } }, 'Ketcher 分子编辑器'),
+      return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'var(--dsw-alias-bg-layer1, #fafafa)', color: 'var(--dsw-alias-label-primary, #222)' } }, [
+        h('div', { key: 'bar', style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderBottom: '1px solid var(--dsw-alias-border-l1, #eee)', flex: '0 0 auto' } }, [
+          h('span', { key: 'title', style: { fontSize: '13px', fontWeight: 600 } }, t('panel.title')),
           h('span', { key: 'spacer', style: { flex: '1 1 auto' } }),
-          btn('插入 SMILES', insertSmiles, { disabled: status !== 'ready', primary: true }),
-          btn('插入 molfile', insertMolfile, { disabled: status !== 'ready' }),
-          btn('清空', clearStructure, { disabled: status !== 'ready' }),
-          btn('收起', () => setOpen(false)),
+          btn(t('btn.copySmiles'), copySmiles, true),
+          btn(t('btn.copyMolfile'), copyMolfile, false),
+          btn(t('btn.clear'), clearStructure, false),
         ]),
-        h('div', {
-          key: 'body',
-          style: { position: 'relative', height: '420px', width: '100%', background: 'var(--dsw-alias-bg-layer1, #fafafa)' },
-        }, [
-          h('div', {
-            key: 'host',
-            ref: hostRef,
-            style: { position: 'absolute', inset: 0 },
+        h('div', { key: 'body', style: { position: 'relative', flex: '1 1 auto', minHeight: 0 } }, [
+          h('iframe', {
+            key: 'frame', ref: frameRef, src: FRAME_URL, title: t('panel.title'),
+            style: { position: 'absolute', inset: 0, width: '100%', height: '100%', border: '0', background: '#fff' },
           }),
           status !== 'ready' ? h('div', {
             key: 'overlay',
-            style: {
-              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
-              justifyContent: 'center', textAlign: 'center', padding: '24px',
-              color: 'var(--dsw-alias-label-tertiary, #888)', fontSize: '13px',
-              background: 'var(--dsw-alias-bg-layer1, #fafafa)',
-            },
-          }, status === 'error'
-            ? 'Ketcher 资源未就绪：' + message + '\n（运行插件目录下的 `node scripts/build-vendor.mjs` 生成 vendor/ketcher-app.js）'
-            : '正在加载 Ketcher…') : null,
+            style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '24px', fontSize: '13px', whiteSpace: 'pre-wrap', color: 'var(--dsw-alias-label-tertiary, #888)', background: 'var(--dsw-alias-bg-layer1, #fafafa)', pointerEvents: 'none' },
+          }, status === 'error' ? t('status.unavailable') + message + '\n' + t('status.hint') : t('status.loading')) : null,
         ]),
         message && status === 'ready'
-          ? h('div', { key: 'msg', style: { padding: '6px 12px', fontSize: '12px', color: 'var(--dsw-alias-state-error-primary, #c0392b)' } }, message)
+          ? h('div', { key: 'msg', style: { flex: '0 0 auto', padding: '6px 10px', fontSize: '12px', color: 'var(--dsw-alias-label-tertiary, #666)' } }, message)
           : null,
       ]);
     }
 
-    return {
-      inject: ['slots'],
-      apply(ctx) {
-        ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-          name: 'conversation.composer.dock',
-          id: 'dsh-ketcher-panel',
+    function definitionOf(t) {
+      return {
+        id: TAB_ID,
+        kind: TAB_KIND,
+        priority: 'extension',
+        title: () => t('type.label'),
+        guide: [{
+          id: 'ketcher',
           order: 20,
-        }, KetcherPanel));
-      },
-    };
+          title: () => t('guide.title'),
+          description: () => t('guide.description'),
+          icon: KetcherGlyph,
+        }],
+      };
+    }
+
+    const inject = ['slots', 'locale', 'sidebarRightTabs', 'sidebarRight'];
+
+    function apply(ctx) {
+      const t = ctx.locale.bind(NS);
+      ctx.effect(() => ctx.locale.register(NS, DICT), 'dsh-ketcher: dictionaries');
+      ctx.effect(() => ctx.sidebarRightTabs.register(definitionOf(t)), 'dsh-ketcher: tab type');
+      ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+        name: 'sidebar.right.pane.tab', key: TAB_ID, locale: NS,
+      }, KetcherTabBody)), 'dsh-ketcher: tab body');
+    }
+
+    return { inject, apply };
   },
 });
+
+// frame-refresh-20261029114651
+
