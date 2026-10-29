@@ -30,6 +30,7 @@ export const inject = ['tools'];
 /** Package directory (absolute), used to resolve the bundled vendor assets. */
 const PKG_DIR = dirname(fileURLToPath(import.meta.url));
 const VENDOR_DIR = join(PKG_DIR, 'vendor');
+const MARKET_DIR = join(PKG_DIR, 'market');
 
 /** Map a file extension to a response content type for static serving. */
 const MIME = {
@@ -90,6 +91,27 @@ export function apply(ctx, config) {
         },
       }),
       'webServer.register(/ketcher-api/ready)',
+    );
+
+    // Self-hosted plugin-market index (format 1) + its icon. DSH's market fetches
+    // index sources over HTTP; serving ours here keeps it reachable on this
+    // machine and offline. Add the URL below as an index source in the market's
+    // Discover tab (see README).
+    webCtx.effect(
+      () => webCtx.webServer.register({
+        kind: 'exact',
+        path: '/ketcher-market/index.json',
+        handler: (request, response) => serveFile(request, response, join(MARKET_DIR, 'index.json'), 'application/json; charset=utf-8'),
+      }),
+      'webServer.register(/ketcher-market/index.json)',
+    );
+    webCtx.effect(
+      () => webCtx.webServer.register({
+        kind: 'exact',
+        path: '/ketcher-market/icon.svg',
+        handler: (request, response) => serveFile(request, response, join(MARKET_DIR, 'icon.svg'), 'image/svg+xml'),
+      }),
+      'webServer.register(/ketcher-market/icon.svg)',
     );
   });
 
@@ -170,6 +192,24 @@ async function vendorEntryExists(dir) {
     return info.isFile();
   } catch {
     return false;
+  }
+}
+
+/** Serve one file from disk with a fixed content type. */
+async function serveFile(request, response, filePath, contentType) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.writeHead(405, { allow: 'GET, HEAD' });
+    response.end();
+    return;
+  }
+  try {
+    const body = await readFile(filePath);
+    response.writeHead(200, { 'content-type': contentType, 'cache-control': 'no-cache, must-revalidate' });
+    if (request.method === 'HEAD') response.end();
+    else response.end(body);
+  } catch {
+    response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+    response.end('not found');
   }
 }
 
